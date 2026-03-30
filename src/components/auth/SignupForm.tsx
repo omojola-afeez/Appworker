@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth, ProfileCreationError } from '../../contexts/AuthContext';
 import { UserPlus } from 'lucide-react';
 
 interface SignupFormProps {
@@ -87,7 +87,13 @@ export function SignupForm({ onToggle }: SignupFormProps) {
         location: formData.location,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sign up');
+      if (err instanceof ProfileCreationError) {
+        setError(err.message);
+      } else if (err instanceof Error) {
+        setError(err.message || 'Failed to sign up. Please try again.');
+      } else {
+        setError('Failed to sign up. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

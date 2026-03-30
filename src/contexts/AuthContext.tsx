@@ -4,6 +4,15 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Profile } from '../types/database.types';
 import { profileService } from '../services/profile.service';
 
+export class ProfileCreationError extends Error {
+  public readonly table: string;
+  constructor(message: string, table: string) {
+    super(message);
+    this.name = 'ProfileCreationError';
+    this.table = table;
+  }
+}
+
 interface AuthContextType {
   user: User | null;
   profile: Profile | null;
@@ -82,12 +91,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
     userData: { full_name: string; user_type: 'apprentice' | 'employer'; phone: string; location: string }
   ) => {
-    const { data, error } = await supabase.auth.signUp({
+    const { data, error: authError } = await supabase.auth.signUp({
       email,
       password,
     });
 
-    if (error) throw error;
+    if (authError) {
+      console.error('Auth signup error:', authError);
+      throw authError;
+    }
     if (!data.user) throw new Error('No user returned from signup');
 
     try {
@@ -99,13 +111,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         phone: userData.phone,
         location: userData.location,
       });
-
-      if (userData.user_type === 'apprentice') {
-        await profileService.createApprenticeProfile(data.user.id);
-      }
     } catch (profileError) {
-      console.error('Profile creation error:', profileError);
-      throw profileError;
+      console.error('Profile creation error (profiles table):', profileError);
+      const message = profileError instanceof Error ? profileError.message : String(profileError);
+      throw new ProfileCreationError(
+        `Account created but profile setup failed: ${message}. Please contact support or check your Supabase table configuration.`,
+        'profiles'
+      );
+    }
+
+    if (userData.user_type === 'apprentice') {
+      try {
+        await profileService.createApprenticeProfile(data.user.id);
+      } catch (apprenticeError) {
+        console.error('Profile creation error (apprentice_profiles table):', apprenticeError);
+        const message = apprenticeError instanceof Error ? apprenticeError.message : String(apprenticeError);
+        throw new ProfileCreationError(
+          `Account created but apprentice profile setup failed: ${message}. Please contact support or check your Supabase table configuration.`,
+          'apprentice_profiles'
+        );
+      }
     }
   };
 
